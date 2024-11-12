@@ -28146,6 +28146,8 @@ async function main() {
       .split('\n')
       .map(line => line.trim())
 
+    let headerParsed = false
+
     try {
       // Try to parse the header
       const headerAst = cc.toConventionalChangelogFormat(cc.parser(header))
@@ -28158,6 +28160,7 @@ async function main() {
         authorUrl: _.get(commit, 'author.html_url')
       })
       core.info(`[OK] Commit ${commit.sha} of type ${headerAst.type} - ${headerAst.subject}`)
+      headerParsed = true
 
       // Process any breaking changes in the header
       for (const note of headerAst.notes) {
@@ -28173,7 +28176,11 @@ async function main() {
         }
       }
     } catch (headerErr) {
-      // Header didn't parse; attempt to parse body commits
+      core.info(`[INVALID] Commit ${commit.sha} header is not in conventional format.`)
+    }
+
+    // Parse body commits if header was not parsed or if there are body lines
+    if (!headerParsed || bodyLines.length > 0) {
       const bodyMessage = bodyLines.join('\n')
       const bodyCommits = parseBodyCommits(bodyMessage, includeInvalidCommits)
 
@@ -28191,8 +28198,8 @@ async function main() {
           })
           core.info(`[OK] Body commit ${commit.sha} of type ${bodyCommit.type} - ${bodyCommit.subject}`)
         }
-      } else if (includeInvalidCommits) {
-        // No valid body commits; add header to "Other Changes"
+      } else if (includeInvalidCommits && !headerParsed) {
+        // No valid body commits and header was not parsed; add header to "Other Changes"
         commitsParsed.push({
           type: 'other',
           subject: header, // Use only the header here
@@ -28202,8 +28209,6 @@ async function main() {
           authorUrl: _.get(commit, 'author.html_url')
         })
         core.info(`[OK] Commit ${commit.sha} with invalid type, added to 'Other Changes' - ${header}`)
-      } else {
-        core.info(`[INVALID] Skipping commit ${commit.sha} as it doesn't follow conventional commit format.`)
       }
     }
   }
@@ -28404,7 +28409,7 @@ async function main() {
     changesFile.push('')
     changesVar.push('')
   } else {
-    return core.warning('Nothing to add to changelog because of excluded types.')
+    return core.warning('Nothing to changelog because of excluded types.')
   }
 
   // SET OUTPUT FOR WORKFLOW
