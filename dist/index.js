@@ -28141,6 +28141,11 @@ async function main() {
   const commitsParsed = []
   const breakingChanges = []
   for (const commit of commits) {
+    // Split commit message into header and body
+    const [header, ...bodyLines] = commit.commit.message
+      .split('\n')
+      .map(line => line.trim())
+
     try {
       // Split commit message into header and body
       const [header, ...bodyLines] = commit.commit.message
@@ -28197,7 +28202,7 @@ async function main() {
       if (includeInvalidCommits) {
         commitsParsed.push({
           type: 'other',
-          subject: commit.commit.message,
+          subject: header, // Use only the header here
           sha: commit.sha,
           url: commit.html_url,
           author: _.get(commit, 'author.login'),
