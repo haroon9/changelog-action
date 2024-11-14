@@ -71,7 +71,7 @@ function parseBodyCommits(messageBody, includeInvalidCommits) {
   let currentCommit = ''
   for (const line of bodyLines) {
     // Check if line starts with a conventional commit type
-    const commitMatch = line.match(/^(feat|fix|perf|refactor|test|build|ci|doc|docs|style|chore)(\(.*?\))?:\s(.+)/)
+    const commitMatch = line.match(/^(feat|feature|fix|bugfix|perf|refactor|test|build|ci|doc|docs|style|chore)(\(.*?\))?:\s(.+)/)
 
     if (commitMatch) {
       // If we have accumulated a previous commit, try to parse it
@@ -233,13 +233,15 @@ async function main() {
   const commitsParsed = []
   const breakingChanges = []
   for (const commit of commits) {
-    try {
-      // Split commit message into header and body
-      const [header, ...bodyLines] = commit.commit.message
-        .split('\n')
-        .map(line => line.trim())
+    // Split commit message into header and body
+    const [header, ...bodyLines] = commit.commit.message
+      .split('\n')
+      .map(line => line.trim())
 
-      // Parse the header
+    let headerParsed = false
+
+    try {
+      // Try to parse the header
       const headerAst = cc.toConventionalChangelogFormat(cc.parser(header))
       commitsParsed.push({
         ...headerAst,
@@ -249,30 +251,10 @@ async function main() {
         author: _.get(commit, 'author.login'),
         authorUrl: _.get(commit, 'author.html_url')
       })
-      core.info(
-        `[OK] Commit ${commit.sha} of type ${headerAst.type} - ${headerAst.subject}`
-      )
+      core.info(`[OK] Commit ${commit.sha} of type ${headerAst.type} - ${headerAst.subject}`)
+      headerParsed = true
 
-      // Always parse body commits
-      const bodyMessage = bodyLines.join('\n')
-      const bodyCommits = parseBodyCommits(bodyMessage, includeInvalidCommits)
-
-      for (const bodyCommit of bodyCommits) {
-        commitsParsed.push({
-          ...bodyCommit,
-          type: bodyCommit.type.toLowerCase(),
-          sha: commit.sha,
-          url: commit.html_url,
-          author: _.get(commit, 'author.login'),
-          authorUrl: _.get(commit, 'author.html_url'),
-          fromBody: true
-        })
-        core.info(
-          `[OK] Body commit ${commit.sha} of type ${bodyCommit.type} - ${bodyCommit.subject}`
-        )
-      }
-
-      // Process breaking changes as before
+      // Process any breaking changes in the header
       for (const note of headerAst.notes) {
         if (note.title === 'BREAKING CHANGE') {
           breakingChanges.push({
@@ -285,23 +267,40 @@ async function main() {
           })
         }
       }
-    } catch (err) {
-      if (includeInvalidCommits) {
+    } catch (headerErr) {
+      core.info(`[INVALID] Commit ${commit.sha} header is not in conventional format.`)
+    }
+
+    // Parse body commits if header was not parsed or if there are body lines
+    if (!headerParsed || bodyLines.length > 0) {
+      const bodyMessage = bodyLines.join('\n')
+      const bodyCommits = parseBodyCommits(bodyMessage, includeInvalidCommits)
+
+      if (bodyCommits.length > 0) {
+        // Add parsed body commits
+        for (const bodyCommit of bodyCommits) {
+          commitsParsed.push({
+            ...bodyCommit,
+            type: bodyCommit.type.toLowerCase(),
+            sha: commit.sha,
+            url: commit.html_url,
+            author: _.get(commit, 'author.login'),
+            authorUrl: _.get(commit, 'author.html_url'),
+            fromBody: true
+          })
+          core.info(`[OK] Body commit ${commit.sha} of type ${bodyCommit.type} - ${bodyCommit.subject}`)
+        }
+      } else if (includeInvalidCommits && !headerParsed) {
+        // No valid body commits and header was not parsed; add header to "Other Changes"
         commitsParsed.push({
           type: 'other',
-          subject: commit.commit.message,
+          subject: header, // Use only the header here
           sha: commit.sha,
           url: commit.html_url,
           author: _.get(commit, 'author.login'),
           authorUrl: _.get(commit, 'author.html_url')
         })
-        core.info(
-          `[OK] Commit ${commit.sha} with invalid type, falling back to other - ${commit.commit.message}`
-        )
-      } else {
-        core.info(
-          `[INVALID] Skipping commit ${commit.sha} as it doesn't follow conventional commit format.`
-        )
+        core.info(`[OK] Commit ${commit.sha} with invalid type, added to 'Other Changes' - ${header}`)
       }
     }
   }
@@ -502,7 +501,7 @@ async function main() {
     changesFile.push('')
     changesVar.push('')
   } else {
-    return core.warning('Nothing to add to changelog because of excluded types.')
+    return core.warning('Nothing to changelog because of excluded types.')
   }
 
   // SET OUTPUT FOR WORKFLOW

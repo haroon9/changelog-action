@@ -27979,7 +27979,7 @@ function parseBodyCommits(messageBody, includeInvalidCommits) {
   let currentCommit = ''
   for (const line of bodyLines) {
     // Check if line starts with a conventional commit type
-    const commitMatch = line.match(/^(feat|fix|perf|refactor|test|build|ci|doc|docs|style|chore)(\(.*?\))?:\s(.+)/)
+    const commitMatch = line.match(/^(feat|feature|fix|bugfix|perf|refactor|test|build|ci|doc|docs|style|chore)(\(.*?\))?:\s(.+)/)
 
     if (commitMatch) {
       // If we have accumulated a previous commit, try to parse it
