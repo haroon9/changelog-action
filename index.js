@@ -257,12 +257,9 @@ async function main() {
     try {
       // Try to parse the header
       const headerAst = cc.toConventionalChangelogFormat(cc.parser(header))
-      // If there's a body, include it in the subject for full message display
-      const fullMessage = bodyLines.length > 0 ? `${headerAst.subject} ${bodyLines.join(' ')}` : headerAst.subject
       commitsParsed.push({
         ...headerAst,
         type: headerAst.type.toLowerCase(),
-        subject: fullMessage,
         sha: commit.sha,
         url: commit.html_url,
         author: _.get(commit, 'author.login'),
