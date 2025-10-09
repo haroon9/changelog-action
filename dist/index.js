@@ -27940,12 +27940,22 @@ function buildSubject({ writeToFile, subject, author, authorUrl, owner, repo }) 
     const authorLine = author ? ` by [@${author}](${authorUrl})` : ''
     if (hasPR) {
       const prMatch = subject.match(rePrEnding)
-      const msgOnly = subject.slice(0, prMatch[0].length * -1)
-      output = msgOnly.replace(rePrId, (m, prId) => {
-        prs.push(prId)
-        return `[#${prId}](${githubServerUrl}/${owner}/${repo}/pull/${prId})`
-      })
-      output += `*(PR [#${prMatch[1]}](${githubServerUrl}/${owner}/${repo}/pull/${prMatch[1]})${authorLine})*`
+      if (prMatch && prMatch[0]) {
+        const msgOnly = subject.slice(0, -prMatch[0].length)
+        output = msgOnly.replace(rePrId, (m, prId) => {
+          prs.push(prId)
+          return `[#${prId}](${githubServerUrl}/${owner}/${repo}/pull/${prId})`
+        })
+        output += `*(PR [#${prMatch[1]}](${githubServerUrl}/${owner}/${repo}/pull/${prMatch[1]})${authorLine})*`
+      } else {
+        // Fallback if regex match fails
+        output = subject.replace(rePrId, (m, prId) => {
+          return `[#${prId}](${githubServerUrl}/${owner}/${repo}/pull/${prId})`
+        })
+        if (author) {
+          output += ` *(commit by [@${author}](${authorUrl}))*`
+        }
+      }
     } else {
       output = subject.replace(rePrId, (m, prId) => {
         return `[#${prId}](${githubServerUrl}/${owner}/${repo}/pull/${prId})`
@@ -27986,6 +27996,8 @@ function parseBodyCommits(messageBody, includeInvalidCommits) {
       if (currentCommit) {
         try {
           const ast = cc.toConventionalChangelogFormat(cc.parser(currentCommit))
+          // Include the full message as the subject for display
+          ast.subject = currentCommit.replace(/^[^:]+:\s*/, '')
           commits.push(ast)
         } catch (err) {
           if (includeInvalidCommits) {
@@ -27998,8 +28010,8 @@ function parseBodyCommits(messageBody, includeInvalidCommits) {
       }
       currentCommit = line
     } else if (line && currentCommit) {
-      // Append non-empty lines to current commit
-      currentCommit += '\n' + line
+      // Append non-empty lines to current commit with proper spacing
+      currentCommit += ' ' + line
     }
   }
 
@@ -28007,6 +28019,8 @@ function parseBodyCommits(messageBody, includeInvalidCommits) {
   if (currentCommit) {
     try {
       const ast = cc.toConventionalChangelogFormat(cc.parser(currentCommit))
+      // Include the full message as the subject for display
+      ast.subject = currentCommit.replace(/^[^:]+:\s*/, '')
       commits.push(ast)
     } catch (err) {
       if (includeInvalidCommits) {
@@ -28151,9 +28165,12 @@ async function main() {
     try {
       // Try to parse the header
       const headerAst = cc.toConventionalChangelogFormat(cc.parser(header))
+      // If there's a body, include it in the subject for full message display
+      const fullMessage = bodyLines.length > 0 ? `${headerAst.subject} ${bodyLines.join(' ')}` : headerAst.subject
       commitsParsed.push({
         ...headerAst,
         type: headerAst.type.toLowerCase(),
+        subject: fullMessage,
         sha: commit.sha,
         url: commit.html_url,
         author: _.get(commit, 'author.login'),
@@ -28438,7 +28455,6 @@ async function main() {
 }
 
 main()
-
 })();
 
 module.exports = __webpack_exports__;
