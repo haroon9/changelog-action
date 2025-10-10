@@ -27986,8 +27986,71 @@ function parseBodyCommits(messageBody, includeInvalidCommits) {
   const bodyLines = messageBody.split('\n').map(line => line.trim()).filter(Boolean)
   const commits = []
 
+  // Git trailer patterns to exclude (only specific ones)
+  const gitTrailerPattern = /^(Co-authored-by|Signed-off-by|Reviewed-by|Tested-by):\s/i
+
+  // Separator patterns to exclude
+  const separatorPattern = /^-{3,}$/
+
   let currentCommit = ''
-  for (const line of bodyLines) {
+  let consecutiveTrailers = 0
+
+  for (let i = 0; i < bodyLines.length; i++) {
+    const line = bodyLines[i]
+
+    // Skip separator lines
+    if (separatorPattern.test(line)) {
+      continue
+    }
+
+    // Check if this line is a Git trailer
+    if (gitTrailerPattern.test(line)) {
+      consecutiveTrailers++
+
+      // Look ahead to see if we have multiple consecutive trailers
+      let hasMoreTrailers = false
+      for (let j = i + 1; j < bodyLines.length; j++) {
+        const nextLine = bodyLines[j]
+        if (separatorPattern.test(nextLine)) continue // Skip separators
+        if (gitTrailerPattern.test(nextLine)) {
+          hasMoreTrailers = true
+          break
+        } else if (nextLine.trim()) {
+          // Non-empty, non-trailer line found
+          break
+        }
+      }
+
+      // If we have consecutive trailers or this is the end, stop processing
+      if (hasMoreTrailers || consecutiveTrailers > 1 || i === bodyLines.length - 1) {
+        // Finalize current commit before hitting trailer section
+        if (currentCommit) {
+          try {
+            const ast = cc.toConventionalChangelogFormat(cc.parser(currentCommit))
+            // Include the full message as the subject for display
+            ast.subject = currentCommit.replace(/^[^:]+:\s*/, '')
+            commits.push(ast)
+          } catch (err) {
+            if (includeInvalidCommits) {
+              commits.push({
+                type: 'other',
+                subject: currentCommit
+              })
+            }
+          }
+          currentCommit = ''
+        }
+        break // Stop processing once we hit trailer section
+      } else {
+        // Single trailer in middle - skip this line but continue
+        consecutiveTrailers = 0
+        continue
+      }
+    } else {
+      // Reset trailer counter for non-trailer lines
+      consecutiveTrailers = 0
+    }
+
     // Check if line starts with a conventional commit type
     const commitMatch = line.match(/^(feat|feature|fix|bugfix|perf|refactor|test|build|ci|doc|docs|style|chore)(\(.*?\))?:\s(.+)/)
 
